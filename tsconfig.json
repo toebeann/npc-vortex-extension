@@ -1,0 +1,14 @@
+{
+    "extends": "@tsconfig/recommended/tsconfig.json",
+    "compilerOptions": {
+        "outDir": "out",
+        "moduleResolution": "node",
+        "removeComments": true,
+        "sourceMap": false,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true
+    },
+    "include": ["src/**/*.ts"],
+    "exclude": ["node_modules"]
+}
