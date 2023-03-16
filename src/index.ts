@@ -30,16 +30,16 @@ export default function main(context: types.IExtensionContext) {
 
 registerNpcApi satisfies RegisterNpcApi; // this line ensures registerNpcApi satisfies the RegisterNpcApi interface
 function registerNpcApi(path: string, callback: Callback): Promise<string>;
-function registerNpcApi<T>(path: string, callback: (input: T) => Result, middleware: (input: unknown) => T): Promise<string>;
+function registerNpcApi<T>(path: string, callback: (input: T) => Result, validator: (input: unknown) => T): Promise<string>;
 function registerNpcApi(namespace: string, api: z.infer<typeof npcApiSchema>): Promise<string[]>;
-async function registerNpcApi<T>(pathOrNamespace: string, callbackOrApi: Callback | ((input: T) => Result) | Record<string, unknown>, middleware?: (input: unknown) => T) {
+async function registerNpcApi<T>(pathOrNamespace: string, callbackOrApi: Callback | ((input: T) => Result) | Record<string, unknown>, validator?: (input: unknown) => T) {
     pathOrNamespace = z.string().parse(pathOrNamespace);
 
     if (callbackSchema.safeParse(callbackOrApi).success) {
         const path = pathOrNamespace;
         const callback = callbackSchema.parse(callbackOrApi);
-        const npc = middleware
-            ? create(callback, callbackSchema.parse(middleware))
+        const npc = validator
+            ? create(callback, callbackSchema.parse(validator))
             : create(callback);
         npc.on('error', (error) => log('warn', error.message, error));
         await npc.listen(join('vortex', path));
@@ -48,13 +48,21 @@ async function registerNpcApi<T>(pathOrNamespace: string, callbackOrApi: Callbac
         const namespace = pathOrNamespace;
         const api = npcApiSchema.parse(callbackOrApi);
         const promises: Promise<string | undefined>[] = [];
+        const getValidator = (property: string) => {
+            const validator = (<any>api).validators?.[property] ?? api.middleware?.[property];
+            return callbackSchema.safeParse(validator).success
+                ? <Callback>validator
+                : undefined;
+        }
 
         for (const property in api) {
             if (!callbackSchema.safeParse(api[property]).success) { continue; }
+            const callback = <Callback>api[property];
+            const validator = getValidator(property);
             promises.push(
-                api.middleware?.[property] && callbackSchema.safeParse(api.middleware[property]).success
-                    ? registerNpcApi(join(namespace, property), <Callback>api[property], <Callback>api.middleware[property])
-                    : registerNpcApi(join(namespace, property), <Callback>api[property]));
+                validator
+                    ? registerNpcApi(join(namespace, property), callback, validator)
+                    : registerNpcApi(join(namespace, property), callback));
         }
 
         return Promise.all(promises);
@@ -153,7 +161,7 @@ const createNexusApi: CreateNexusApi = (api: types.IExtensionApi) => {
 
         untrackMod: async (input) => nexus.schemas.iTrackedModSchema.parse(await (await getNexus()).untrackMod(input.modId, input.gameId)),
 
-        middleware: {
+        validators: {
             endorseMod: nexus.schemas.endorseModArgsSchema.parse,
             getChangelogs: nexus.schemas.modIdArgsSchema.parse,
             getCollection: nexus.schemas.getCollectionArgsSchema.parse,
